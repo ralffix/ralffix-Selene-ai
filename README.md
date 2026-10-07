@@ -44,7 +44,7 @@ A desktop AI chat app that can work with your files, your terminal and the web, 
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/selene.git
+git clone https://github.com/ralffix/selene.git
 cd selene
 
 # Optional: installs system libraries, Rust and the npm packages (Arch, Debian/Ubuntu, Fedora)
