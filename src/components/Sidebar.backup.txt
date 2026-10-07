@@ -1,0 +1,516 @@
+import { useState, useRef, useEffect } from 'react';
+import { MoonIcon, PlusIcon, SearchIcon, FolderIcon, KeyIcon, SettingsIcon, PencilIcon, TrashIcon, FolderOpenIcon } from './icons';
+import ProjectFiles from './ProjectFiles';
+
+export default function Sidebar({
+  chats,
+  projects,
+  activeChatId,
+  activeProjectId,
+  collapsed,
+  searchQuery,
+  onNewChat,
+  onSelectChat,
+  onRenameChat,
+  onDeleteChat,
+  onManageKeys,
+  onSettings,
+  onSearchChange,
+  onSelectProject,
+  onAddProject,
+  onDeleteProject,
+  onRenameProject,
+  onSetProjectFolder,
+  onMoveChatToProject,
+  onAddChatInProject,
+}) {
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef(null);
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
+  const [showNewProjectInput, setShowNewProjectInput] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, chatId }
+  const newProjectInputRef = useRef(null);
+  const projectsListRef = useRef(null);
+
+  useEffect(() => {
+    if (showSearch && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [showSearch]);
+
+  useEffect(() => {
+    if (showNewProjectInput && newProjectInputRef.current) {
+      newProjectInputRef.current.focus();
+    }
+  }, [showNewProjectInput]);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [contextMenu]);
+
+  // Filter chats: when a project is active, show only its chats.
+  // When 'All chats' is selected, show only chats NOT assigned to any project.
+  const filteredChats = chats.filter((chat) => {
+    if (activeProjectId) {
+      if (chat.projectId !== activeProjectId) return false;
+    } else {
+      // 'All chats' — only show chats without a project (orphan chats)
+      if (chat.projectId) return false;
+    }
+    if (searchQuery && !chat.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  });
+
+  // Sort by most recent first
+  const sortedChats = [...filteredChats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  const handleSearchToggle = () => {
+    setShowSearch(!showSearch);
+    if (showSearch) onSearchChange('');
+  };
+
+  const handleContextMenu = (e, chatId) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, chatId });
+  };
+
+  const handleMoveToProject = (chatId, projectId) => {
+    onMoveChatToProject(chatId, projectId);
+    setContextMenu(null);
+  };
+
+  const handleAddProjectFromInput = () => {
+    if (newProjectName.trim()) {
+      onAddProject(newProjectName.trim());
+      setNewProjectName('');
+      setShowNewProjectInput(false);
+    }
+  };
+
+  const handleProjectKeyDown = (e) => {
+    if (e.key === 'Enter') handleAddProjectFromInput();
+    if (e.key === 'Escape') { setShowNewProjectInput(false); setNewProjectName(''); }
+  };
+
+  const handleProjectRenameSave = (projectId) => {
+    if (editingProjectName.trim()) {
+      onRenameProject(projectId, editingProjectName.trim());
+    }
+    setEditingProjectId(null);
+  };
+
+  const handleProjectRenameKeyDown = (e) => {
+    if (e.key === 'Enter') handleProjectRenameSave(editingProjectId);
+    if (e.key === 'Escape') setEditingProjectId(null);
+  };
+
+  const activeProject = activeProjectId ? projects.find((p) => p.id === activeProjectId) : null;
+
+  // ── ChatItem component ──
+  function ChatItem({ chat, isActive, projectColor, onSelect, onRename, onDelete }) {
+    const [editing, setEditing] = useState(false);
+    const [editValue, setEditValue] = useState(chat.title);
+    const [showActions, setShowActions] = useState(false);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+      if (editing && inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, [editing]);
+
+    const handleSave = () => {
+      if (editValue.trim() && editValue !== chat.title) onRename(editValue.trim());
+      setEditing(false);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+      if (e.key === 'Escape') { setEditValue(chat.title); setEditing(false); }
+    };
+
+    if (editing) {
+      return (
+        <div className="px-3 py-1">
+          <input
+            ref={inputRef}
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleSave}
+            className="w-full bg-[var(--cl-surface)] border border-[var(--cl-accent)]/50 rounded-lg px-2 py-1.5 text-sm text-[var(--cl-text)] outline-none"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={`group flex items-center rounded-lg transition-all duration-150 ${
+          isActive
+            ? 'bg-[var(--cl-surface)] border border-[var(--cl-border-2)] shadow-sm'
+            : 'border border-transparent hover:bg-[var(--cl-hover)]'
+        }`}
+        onMouseEnter={() => setShowActions(true)}
+        onMouseLeave={() => setShowActions(false)}
+        onContextMenu={(e) => handleContextMenu(e, chat.id)}
+      >
+        <button
+          onClick={onSelect}
+          className={`flex-1 text-left text-sm px-3 py-2 ${
+            isActive ? 'text-[var(--cl-text)]' : 'text-[var(--cl-text-2)] hover:text-[var(--cl-text)]'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            {projectColor && (
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: projectColor }} />
+            )}
+            <span className="truncate">{chat.title}</span>
+          </span>
+        </button>
+        {showActions && (
+          <div className="flex items-center gap-0.5 pr-2 animate-fade-in">
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditing(true); setEditValue(chat.title); }}
+              className="p-1 rounded-md text-[var(--cl-text-3)] hover:text-[var(--cl-text)] hover:bg-[var(--cl-hover)] transition-all"
+              title="Rename"
+            >
+              <PencilIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="p-1 rounded-md text-[var(--cl-text-3)] hover:text-red-400 hover:bg-red-400/10 transition-all"
+              title="Delete"
+            >
+              <TrashIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── ProjectItem component ──
+  function ProjectItem({ project, isActive }) {
+    const [isHovered, setIsHovered] = useState(false);
+    const [isLinking, setIsLinking] = useState(false);
+
+    return (
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className="relative"
+      >
+        <button
+          onClick={() => onSelectProject(project.id)}
+          className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-all duration-150 flex items-center gap-2 ${
+            isActive
+              ? 'bg-[var(--cl-surface)] text-[var(--cl-text)] border border-[var(--cl-border-2)]'
+              : 'text-[var(--cl-text-2)] hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] border border-transparent'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />
+          <span className="truncate flex-1">{project.name}</span>
+          {project.linkedFolder && (
+            <FolderIcon className="w-3 h-3 text-[var(--cl-accent)]/60 flex-shrink-0" />
+          )}
+          {isHovered && (
+            <div className="flex items-center gap-0.5 flex-shrink-0 animate-fade-in">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChatInProject(project.id);
+                }}
+                className="p-1 rounded text-[var(--cl-accent)] hover:text-[var(--cl-accent-h)] hover:bg-[var(--cl-accent)]/10"
+                title="New chat in this project"
+              >
+                <PlusIcon className="w-3 h-3" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingProjectId(project.id);
+                  setEditingProjectName(project.name);
+                }}
+                className="p-1 rounded text-[var(--cl-text-3)] hover:text-[var(--cl-text)] hover:bg-[var(--cl-hover)]"
+                title="Rename"
+              >
+                <PencilIcon className="w-3 h-3" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteProject(project.id);
+                }}
+                className="p-1 rounded text-[var(--cl-text-3)] hover:text-red-400 hover:bg-red-400/10"
+                title="Delete project"
+              >
+                <TrashIcon className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </button>
+
+        {/* Inline rename input */}
+        {editingProjectId === project.id && (
+          <div className="px-1 py-1 absolute inset-0 z-10">
+            <input
+              autoFocus
+              type="text"
+              value={editingProjectName}
+              onChange={(e) => setEditingProjectName(e.target.value)}
+              onKeyDown={handleProjectRenameKeyDown}
+              onBlur={() => handleProjectRenameSave(project.id)}
+              className="w-full bg-[var(--cl-surface)] border border-[var(--cl-accent)]/50 rounded-lg px-3 py-1.5 text-sm text-[var(--cl-text)] outline-none"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <aside
+      className={`bg-[var(--cl-sidebar)] border-r border-[var(--cl-border)] flex flex-col self-stretch min-h-0 flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
+        collapsed ? 'w-0 border-r-0 opacity-0' : 'w-[260px] opacity-100'
+      }`}
+    >
+      <div className="flex flex-col h-full min-w-[260px]">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-4 pt-4 pb-2">
+          <div className="w-8 h-8 rounded-xl bg-[var(--cl-accent-subtle)] flex items-center justify-center">
+            <MoonIcon className="w-5 h-5 text-[var(--cl-accent)]" />
+          </div>
+          <span className="text-[var(--cl-text)] font-semibold text-[15px] tracking-tight">Luna</span>
+        </div>
+
+        {/* Nav */}
+        <div className="px-3 pt-3 space-y-1">
+          <button
+            onClick={onNewChat}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[var(--cl-text)] rounded-lg border border-[var(--cl-accent)]/30 bg-[var(--cl-accent-subtle)] hover:bg-[var(--cl-accent)]/15 hover:border-[var(--cl-accent)]/50 transition-all duration-200 active:scale-[0.98]"
+          >
+            <PlusIcon className="w-4 h-4 text-[var(--cl-accent)]" />
+            <span>New chat</span>
+          </button>
+
+          <button
+            onClick={handleSearchToggle}
+            className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+              showSearch
+                ? 'bg-[var(--cl-hover)] text-[var(--cl-text)]'
+                : 'text-[var(--cl-text-2)] hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)]'
+            }`}
+          >
+            <SearchIcon />
+            <span>Search</span>
+          </button>
+        </div>
+
+        {/* Separator */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="border-t border-[var(--cl-border)]" />
+        </div>
+
+        {/* Scrollable area: chats + projects */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3">
+          {/* Search input */}
+          {showSearch && (
+            <div className="pb-3 animate-fade-in">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Filter chats..."
+                className="w-full bg-[var(--cl-surface)] border border-[var(--cl-border-2)] rounded-lg p-2.5 text-sm text-[var(--cl-text)] focus:outline-none focus:border-[var(--cl-accent)]/50 focus:ring-1 focus:ring-[var(--cl-accent-glow)] placeholder-[var(--cl-text-3)] transition-all duration-200"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setShowSearch(false); onSearchChange(''); }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Section header */}
+          <p className="px-3 pb-2 text-xs text-[var(--cl-text-3)] font-semibold uppercase tracking-wider">
+            {activeProjectId
+              ? activeProject?.name ?? 'Recents'
+              : (showSearch && searchQuery ? `Results (${sortedChats.length})` : 'Recents')}
+          </p>
+
+          {/* Chat list */}
+          <div className="space-y-0.5">
+            {sortedChats.length === 0 ? (
+              <p className="px-3 py-6 text-xs text-[var(--cl-text-3)] text-center">
+                {activeProjectId
+                  ? 'No chats in this project'
+                  : (searchQuery ? 'No chats match your search' : 'No chats yet')}
+              </p>
+            ) : (
+              sortedChats.map((chat) => {
+                const chatProject = chat.projectId
+                  ? projects.find((p) => p.id === chat.projectId)
+                  : null;
+                return (
+                  <ChatItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={chat.id === activeChatId}
+                    projectColor={chatProject?.color}
+                    onSelect={() => onSelectChat(chat.id)}
+                    onRename={(title) => onRenameChat(chat.id, title)}
+                    onDelete={() => onDeleteChat(chat.id)}
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Projects section */}
+          <div ref={projectsListRef} className="pt-5 pb-2">
+            <p className="px-3 pb-2 text-xs text-[var(--cl-text-3)] font-semibold uppercase tracking-wider flex items-center justify-between">
+              <span>Projects</span>
+              <button
+                onClick={() => setShowNewProjectInput(true)}
+                className="p-1 rounded text-[var(--cl-text-3)] hover:text-[var(--cl-text)] hover:bg-[var(--cl-hover)] transition-all"
+                title="New project"
+              >
+                <PlusIcon className="w-3.5 h-3.5" />
+              </button>
+            </p>
+
+            <div className="space-y-0.5">
+              {/* All chats */}
+              <button
+                onClick={() => onSelectProject(null)}
+                className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-all duration-150 flex items-center gap-2 ${
+                  activeProjectId === null
+                    ? 'bg-[var(--cl-surface)] text-[var(--cl-text)] border border-[var(--cl-border-2)]'
+                    : 'text-[var(--cl-text-2)] hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] border border-transparent'
+                }`}
+              >
+                <FolderOpenIcon className="w-4 h-4 text-[var(--cl-text-3)]" />
+                <span>All chats</span>
+              </button>
+
+              {/* Project list */}
+              {projects.map((project) => (
+                <ProjectItem
+                  key={project.id}
+                  project={project}
+                  isActive={activeProjectId === project.id}
+                />
+              ))}
+
+              {/* New project input */}
+              {showNewProjectInput && (
+                <div className="px-1 pt-1">
+                  <input
+                    ref={newProjectInputRef}
+                    type="text"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={handleProjectKeyDown}
+                    onBlur={() => { if (!newProjectName.trim()) { setShowNewProjectInput(false); } else { handleAddProjectFromInput(); } }}
+                    placeholder="Project name"
+                    className="w-full bg-[var(--cl-surface)] border border-[var(--cl-accent)]/50 rounded-lg px-3 py-1.5 text-sm text-[var(--cl-text)] outline-none placeholder-[var(--cl-text-3)]"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Active project's linked folder */}
+        {activeProject && (
+          <ProjectFiles
+            folderPath={activeProject.linkedFolder}
+            onFolderChange={(path) => onSetProjectFolder(activeProject.id, path)}
+          />
+        )}
+
+        {/* Bottom account area */}
+        <div className="p-3 border-t border-[var(--cl-border)] space-y-0.5">
+          <button
+            onClick={onManageKeys}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-[var(--cl-text-2)] rounded-lg hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] transition-all duration-200"
+          >
+            <KeyIcon />
+            <span>Manage Keys</span>
+          </button>
+          <button
+            onClick={onSettings}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-[var(--cl-text-2)] rounded-lg hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] transition-all duration-200"
+          >
+            <SettingsIcon />
+            <span>Settings</span>
+          </button>
+          <div className="flex items-center gap-3 px-3 py-2.5 mt-1 rounded-lg hover:bg-[var(--cl-hover)] transition-all duration-200 group cursor-default">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--cl-accent)] to-[var(--cl-accent-h)] flex items-center justify-center text-xs font-semibold text-white flex-shrink-0">
+              L
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-[var(--cl-text)] truncate">User</p>
+              <p className="text-xs text-[var(--cl-text-3)] truncate">Free plan</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 w-48 bg-[var(--cl-sidebar)] border border-[var(--cl-border)] rounded-xl shadow-2xl py-1 animate-fade-in"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 text-xs text-[var(--cl-text-3)] font-medium uppercase tracking-wider border-b border-[var(--cl-border)]">
+            Move to project
+          </div>
+          <button
+            onClick={() => handleMoveToProject(contextMenu.chatId, null)}
+            className={`w-full text-left text-sm px-3 py-1.5 text-[var(--cl-text-2)] hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] transition-colors ${
+              !chats.find((c) => c.id === contextMenu.chatId)?.projectId
+                ? 'bg-[var(--cl-hover)] text-[var(--cl-text)]'
+                : ''
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <FolderOpenIcon className="w-3.5 h-3.5" />
+              No project
+            </span>
+          </button>
+          {projects.length === 0 && (
+            <p className="px-3 py-2 text-xs text-[var(--cl-text-3)] italic">No projects yet</p>
+          )}
+          {projects.map((project) => {
+            const isActive = chats.find((c) => c.id === contextMenu.chatId)?.projectId === project.id;
+            return (
+              <button
+                key={project.id}
+                onClick={() => handleMoveToProject(contextMenu.chatId, project.id)}
+                className={`w-full text-left text-sm px-3 py-1.5 text-[var(--cl-text-2)] hover:bg-[var(--cl-hover)] hover:text-[var(--cl-text)] transition-colors ${
+                  isActive ? 'bg-[var(--cl-hover)] text-[var(--cl-text)]' : ''
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
+                  {project.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </aside>
+  );
+}

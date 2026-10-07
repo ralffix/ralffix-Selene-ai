@@ -1,0 +1,354 @@
+@import "tailwindcss";
+@import "highlight.js/styles/github-dark.css";
+
+/* ── Dark theme (default) ── */
+:root {
+  --cl-bg: #1a1a1a;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(201, 100, 66, 0.04), transparent);
+  --cl-sidebar: #111111;
+  --cl-surface: #242424;
+  --cl-hover: #2a2a2a;
+  --cl-surface-alt: #1a1a1a;
+
+  --cl-text: #f5f5f5;
+  --cl-text-2: #a3a3a3;
+  --cl-text-3: #6b6b6b;
+
+  --cl-border: #2a2a2a;
+  --cl-border-2: #353535;
+  --cl-border-3: #505050;
+
+  --cl-accent: #c96442;
+  --cl-accent-h: #d47555;
+  --cl-accent-glow: rgba(201, 100, 66, 0.25);
+  --cl-accent-subtle: rgba(201, 100, 66, 0.1);
+
+  --cl-scroll: #333333;
+  --cl-scroll-h: #4a4a4a;
+
+  --cl-shadow: rgba(0, 0, 0, 0.4);
+}
+
+/* ── Light theme ── */
+.light {
+  --cl-bg: #f0f0f0;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(201, 100, 66, 0.06), transparent);
+  --cl-sidebar: #ffffff;
+  --cl-surface: #ffffff;
+  --cl-hover: #f0f0f0;
+  --cl-surface-alt: #fafafa;
+
+  --cl-text: #1a1a1a;
+  --cl-text-2: #6b6b6b;
+  --cl-text-3: #9ca3af;
+
+  --cl-border: #e5e5e5;
+  --cl-border-2: #d4d4d4;
+  --cl-border-3: #a3a3a3;
+
+  --cl-accent: #c96442;
+  --cl-accent-h: #b55a3a;
+  --cl-accent-glow: rgba(201, 100, 66, 0.2);
+  --cl-accent-subtle: rgba(201, 100, 66, 0.08);
+
+  --cl-scroll: #d0d0d0;
+  --cl-scroll-h: #bbbbbb;
+
+  --cl-shadow: rgba(0, 0, 0, 0.08);
+}
+
+@theme {
+  --color-claude-bg: var(--cl-bg);
+  --color-claude-sidebar: var(--cl-sidebar);
+  --color-claude-surface: var(--cl-surface);
+  --color-claude-surface-hover: var(--cl-hover);
+  --color-claude-accent: #c96442;
+  --color-claude-accent-hover: #b55a3a;
+  --color-claude-text: var(--cl-text);
+  --color-claude-text-secondary: var(--cl-text-2);
+  --color-claude-text-muted: var(--cl-text-3);
+  --color-claude-border: var(--cl-border);
+  --color-claude-user-bubble: var(--cl-border);
+}
+
+/* Dark form controls: native dropdown lists follow the theme instead of popping up white */
+:root { color-scheme: dark; }
+html.light { color-scheme: light; }
+select option {
+  background-color: var(--cl-surface);
+  color: var(--cl-text);
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--cl-bg);
+  color: var(--cl-text);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Ocean theme ── */
+.ocean {
+  --cl-bg: #0f172a;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56, 189, 248, 0.06), transparent);
+  --cl-sidebar: #0a0f1e;
+  --cl-surface: #1e293b;
+  --cl-hover: #334155;
+  --cl-surface-alt: #0f172a;
+
+  --cl-text: #f1f5f9;
+  --cl-text-2: #94a3b8;
+  --cl-text-3: #64748b;
+
+  --cl-border: #334155;
+  --cl-border-2: #475569;
+  --cl-border-3: #64748b;
+
+  --cl-accent: #38bdf8;
+  --cl-accent-h: #7dd3fc;
+  --cl-accent-glow: rgba(56, 189, 248, 0.25);
+  --cl-accent-subtle: rgba(56, 189, 248, 0.1);
+
+  --cl-scroll: #475569;
+  --cl-scroll-h: #64748b;
+
+  --cl-shadow: rgba(0, 0, 0, 0.4);
+}
+
+/* ── Forest theme ── */
+.forest {
+  --cl-bg: #0d1a11;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(74, 222, 128, 0.06), transparent);
+  --cl-sidebar: #070f09;
+  --cl-surface: #1a2e1e;
+  --cl-hover: #2d4231;
+  --cl-surface-alt: #0d1a11;
+
+  --cl-text: #f0fdf4;
+  --cl-text-2: #86efac;
+  --cl-text-3: #4a7c59;
+
+  --cl-border: #2d4231;
+  --cl-border-2: #3d5a43;
+  --cl-border-3: #4a7c59;
+
+  --cl-accent: #4ade80;
+  --cl-accent-h: #6ee7a0;
+  --cl-accent-glow: rgba(74, 222, 128, 0.25);
+  --cl-accent-subtle: rgba(74, 222, 128, 0.1);
+
+  --cl-scroll: #3d5a43;
+  --cl-scroll-h: #4a7c59;
+
+  --cl-shadow: rgba(0, 0, 0, 0.4);
+}
+
+/* ── Midnight theme ── */
+.midnight {
+  --cl-bg: #0f0a1a;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(167, 139, 250, 0.06), transparent);
+  --cl-sidebar: #08050e;
+  --cl-surface: #1b1230;
+  --cl-hover: #2a1f45;
+  --cl-surface-alt: #0f0a1a;
+
+  --cl-text: #f0eef8;
+  --cl-text-2: #a89bc2;
+  --cl-text-3: #6b5e89;
+
+  --cl-border: #2a1f45;
+  --cl-border-2: #3a2e5a;
+  --cl-border-3: #4d3d72;
+
+  --cl-accent: #a78bfa;
+  --cl-accent-h: #bda4ff;
+  --cl-accent-glow: rgba(167, 139, 250, 0.25);
+  --cl-accent-subtle: rgba(167, 139, 250, 0.1);
+
+  --cl-scroll: #3a2e5a;
+  --cl-scroll-h: #4d3d72;
+
+  --cl-shadow: rgba(0, 0, 0, 0.4);
+}
+
+#root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cl-scroll);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cl-scroll-h);
+}
+
+/* ── Animations ── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px var(--cl-accent-glow); }
+  50%      { box-shadow: 0 0 18px var(--cl-accent-glow); }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+/* ── Typing cursor ── */
+.typing-cursor::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--cl-accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: breathe 1s ease-in-out infinite;
+}
+
+/* ── Code blocks ── */
+.code-block {
+  background: var(--cl-surface-alt);
+  border: 1px solid var(--cl-border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--cl-hover);
+  border-bottom: 1px solid var(--cl-border);
+  font-size: 11px;
+  color: var(--cl-text-3);
+  font-family: ui-monospace, monospace;
+}
+
+.code-block-content {
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  color: var(--cl-text);
+}
+
+/* ── Inline code ── */
+.inline-code {
+  background: var(--cl-hover);
+  border: 1px solid var(--cl-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.875em;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  color: var(--cl-accent);
+}
+
+/* ── Theme transition ── */
+html {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html *,
+html *::before,
+html *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* ── Sunset theme ── */
+.sunset {
+  --cl-bg: #1a0f0e;
+  --cl-bg-gradient: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(251, 146, 60, 0.06), transparent);
+  --cl-sidebar: #0f0808;
+  --cl-surface: #2a1a15;
+  --cl-hover: #3a2520;
+  --cl-surface-alt: #1a0f0e;
+
+  --cl-text: #fdf1ed;
+  --cl-text-2: #d6a898;
+  --cl-text-3: #8a5e50;
+
+  --cl-border: #3a2520;
+  --cl-border-2: #4d312a;
+  --cl-border-3: #6a453a;
+
+  --cl-accent: #fb923c;
+  --cl-accent-h: #fdba74;
+  --cl-accent-glow: rgba(251, 146, 60, 0.25);
+  --cl-accent-subtle: rgba(251, 146, 60, 0.1);
+
+  --cl-scroll: #4d312a;
+  --cl-scroll-h: #6a453a;
+
+  --cl-shadow: rgba(0, 0, 0, 0.4);
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--cl-accent-subtle);
+  color: var(--cl-text);
+}
