@@ -9,20 +9,60 @@ pub struct FileEntry {
     children: Vec<FileEntry>,
 }
 
+fn project_path(root: &str, relative: &str) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let root = std::fs::canonicalize(root).map_err(|e| format!("Invalid project folder: {}", e))?;
+    let rel = Path::new(relative);
+    if rel.as_os_str().is_empty() || rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return Err("File path must be a relative path inside the project folder".into());
+    }
+    let target = root.join(rel);
+    Ok((root, target))
+}
+
 /// Read a file and return its contents as a string
 #[tauri::command]
-fn read_project_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
+fn read_project_file(root: String, path: String) -> Result<Option<String>, String> {
+    let (root, target) = project_path(&root, &path)?;
+    let canonical = match std::fs::canonicalize(&target) {
+        Ok(path) => path,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("Failed to read file: {}", e)),
+    };
+    if !canonical.starts_with(&root) { return Err("File path escapes the project folder".into()); }
+    std::fs::read_to_string(canonical).map(Some).map_err(|e| format!("Failed to read file: {}", e))
 }
 
 /// Write content to a file (creates parent directories if needed)
 #[tauri::command]
-fn write_project_file(path: String, content: String) -> Result<(), String> {
-    if let Some(parent) = Path::new(&path).parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directories: {}", e))?;
+fn write_project_file(root: String, path: String, content: String) -> Result<(), String> {
+    let (root, target) = project_path(&root, &path)?;
+    if let Some(parent) = target.parent() {
+        let relative_parent = parent.strip_prefix(&root).map_err(|_| "File path escapes the project folder")?;
+        let mut current = root.clone();
+        for component in relative_parent.components() {
+            current.push(component);
+            match std::fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => return Err("Symbolic links are not allowed in project file paths".into()),
+                Ok(metadata) if !metadata.is_dir() => return Err("A parent path component is not a directory".into()),
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir(&current)
+                    .map_err(|e| format!("Failed to create directory: {}", e))?,
+                Err(e) => return Err(format!("Invalid parent directory: {}", e)),
+            }
+        }
+        let canonical_parent = std::fs::canonicalize(parent).map_err(|e| format!("Invalid parent directory: {}", e))?;
+        if !canonical_parent.starts_with(&root) { return Err("File path escapes the project folder".into()); }
     }
-    std::fs::write(&path, &content).map_err(|e| format!("Failed to write file: {}", e))
+    match std::fs::symlink_metadata(&target) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return Err("Symbolic links are not allowed in project file paths".into()),
+        Ok(_) => {
+            let canonical = std::fs::canonicalize(&target).map_err(|e| format!("Invalid file path: {}", e))?;
+            if !canonical.starts_with(&root) { return Err("File path escapes the project folder".into()); }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("Invalid file path: {}", e)),
+    }
+    std::fs::write(&target, &content).map_err(|e| format!("Failed to write file: {}", e))
 }
 
 /// Delete a file or empty directory
@@ -213,7 +253,15 @@ fn is_blocked_host(u: &url::Url) -> bool {
         Some(url::Host::Ipv4(ip)) => {
             ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
         }
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback() || ip.is_unspecified(),
+        Some(url::Host::Ipv6(ip)) => {
+            let segments = ip.segments();
+            let unique_local = segments[0] & 0xfe00 == 0xfc00; // fc00::/7
+            let link_local = segments[0] & 0xffc0 == 0xfe80; // fe80::/10
+            let mapped_private = ip.to_ipv4_mapped().is_some_and(|v4| {
+                v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified()
+            });
+            ip.is_loopback() || ip.is_unspecified() || unique_local || link_local || mapped_private
+        }
         None => true,
     }
 }
@@ -228,15 +276,16 @@ async fn fetch_url(url: String, max_chars: Option<usize>) -> Result<String, Stri
     if is_blocked_host(&parsed) {
         return Err("Blocked: local and private network addresses are not allowed".to_string());
     }
-    let max = max_chars.unwrap_or(6000);
+    let max = max_chars.unwrap_or(6000).min(100_000);
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
         .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
 
-    let resp = client.get(parsed).send().await.map_err(|e| e.to_string())?;
+    let mut resp = client.get(parsed).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -246,7 +295,18 @@ async fn fetch_url(url: String, max_chars: Option<usize>) -> Result<String, Stri
         .and_then(|v| v.to_str().ok())
         .map(|v| v.contains("html"))
         .unwrap_or(true);
-    let raw = resp.text().await.map_err(|e| e.to_string())?;
+    const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+    if resp.content_length().is_some_and(|n| n > MAX_RESPONSE_BYTES as u64) {
+        return Err("Page is larger than the 2 MiB reading limit".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err("Page is larger than the 2 MiB reading limit".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let raw = String::from_utf8_lossy(&bytes);
 
     let text = if is_html {
         let doc = scraper::Html::parse_document(&raw);
@@ -272,7 +332,7 @@ async fn fetch_url(url: String, max_chars: Option<usize>) -> Result<String, Stri
         }
         out
     } else {
-        raw
+        raw.to_string()
     };
 
     let text: String = text.chars().take(max).collect();

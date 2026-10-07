@@ -16,6 +16,7 @@ import { stripThinking } from './thinking';
 import { runAgents } from './agents';
 import AgentPanel from './components/AgentPanel';
 import TodoPanel from './components/TodoPanel';
+import FileChangesReview from './components/FileChangesReview';
 import { mergePrompts, fillPrompt, PROMPT_DEFAULTS } from './prompts';
 
 // ── File system helpers (Tauri only — safe fallback in browser) ──
@@ -29,22 +30,22 @@ async function readProjectTree(folderPath) {
   } catch { return null; }
 }
 
-async function writeFile(path, content) {
+async function writeFile(root, path, content) {
   if (!isTauri()) return '⚠ Browser mode — file write not available';
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('write_project_file', { path, content });
+    await invoke('write_project_file', { root, path, content });
     return null;
   } catch (err) {
     return `⚠ Failed to write ${path}: ${String(err)}`;
   }
 }
 
-async function readFile(path) {
+async function readFile(root, path) {
   if (!isTauri()) return { error: '⚠ Browser mode — file read not available' };
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const content = await invoke('read_project_file', { path });
+    const content = await invoke('read_project_file', { root, path });
     return { content };
   } catch (err) {
     return { error: `⚠ Could not read: ${String(err)}` };
@@ -661,6 +662,7 @@ export default function App() {
   const messages = chatMessages[activeChatId] ?? [];
   const [inputValue, setInputValue] = useState('');
   const [streamingChatId, setStreamingChatId] = useState(null);
+  const [pendingFileChanges, setPendingFileChanges] = useState(null);
   const isStreaming = streamingChatId !== null;
 
   const updateChatMessages = useCallback((chatId, updater) => {
@@ -669,6 +671,50 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(current) : updater;
       return { ...prev, [chatId]: next };
     });
+  }, []);
+
+  const reviewFileChanges = useCallback(async (root, chatId, files) => {
+    const prepared = await Promise.all(files.map(async (file) => {
+      const result = await readFile(root, file.path);
+      return {
+        ...file,
+        original: result.content ?? '',
+        isNew: result.content === null,
+        readError: result.error || null,
+        accepted: !result.error,
+      };
+    }));
+    setPendingFileChanges({ root, chatId, files: prepared });
+  }, []);
+
+  const applyReviewedFileChanges = useCallback(async (acceptedFiles) => {
+    if (!pendingFileChanges) return;
+    const { root, chatId } = pendingFileChanges;
+    setPendingFileChanges(null);
+    const outcomes = [];
+    for (const file of acceptedFiles) {
+      const error = await writeFile(root, file.path, file.content);
+      outcomes.push(error ? `⚠ ${file.path}: ${error}` : `✅ Wrote \`${file.path}\``);
+    }
+    if (outcomes.length) {
+      updateChatMessages(chatId, (prev) => {
+        const updated = [...prev];
+        let index = -1;
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'assistant') { index = i; break; }
+        }
+        if (index >= 0) updated[index] = { ...updated[index], content: updated[index].content + `\n\n---\n📝 **File changes:**\n${outcomes.join('\n')}` };
+        return updated;
+      });
+    }
+    setPendingFileChanges(null);
+  }, [pendingFileChanges, updateChatMessages]);
+
+  const toggleReviewedFile = useCallback((index) => {
+    setPendingFileChanges((current) => current ? {
+      ...current,
+      files: current.files.map((file, i) => i === index && !file.readError ? { ...file, accepted: !file.accepted } : file),
+    } : current);
   }, []);
 
   // ── Debounced localStorage ──
@@ -1617,24 +1663,10 @@ export default function App() {
     if (chatLinkedFolder && isTauri() && responseContent) {
       const writes = parseFileWrites(responseContent);
       if (writes.length > 0) {
-        const writeResults = [];
-        for (const w of writes) {
-          const fullPath = chatLinkedFolder.endsWith('/') || chatLinkedFolder.endsWith('\\')
-            ? `${chatLinkedFolder}${w.path}` : `${chatLinkedFolder}/${w.path}`;
-          const err = await writeFile(fullPath, w.content);
-          writeResults.push(err ? `⚠ ${w.path}: ${err}` : `✅ Wrote \`${w.path}\``);
-        }
-        updateChatMessages(chatId, (prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last && last.role === 'assistant') {
-            updated[updated.length - 1] = { ...last, content: last.content + `\n\n---\n📝 **Files written:**\n${writeResults.join('\n')}` };
-          }
-          return updated;
-        });
+        await reviewFileChanges(chatLinkedFolder, chatId, writes);
       }
     }
-  }, [inputValue, activeKey, chatMessages, streamingChatId, activeChatId, updateChatMessages, streamResponse, getChatLinkedFolder]);
+  }, [inputValue, activeKey, chatMessages, streamingChatId, activeChatId, updateChatMessages, streamResponse, getChatLinkedFolder, reviewFileChanges]);
 
   const handleSendSuggestion = useCallback((text) => { setInputValue(''); doSend(text); }, [doSend]);
 
@@ -1794,24 +1826,10 @@ export default function App() {
     if (chatLinkedFolder && isTauri() && responseContent && !parseFileReads(responseContent).length) {
       const writes = parseFileWrites(responseContent);
       if (writes.length > 0) {
-        const writeResults = [];
-        for (const w of writes) {
-          const fullPath = chatLinkedFolder.endsWith('/') || chatLinkedFolder.endsWith('\\')
-            ? `${chatLinkedFolder}${w.path}` : `${chatLinkedFolder}/${w.path}`;
-          const err = await writeFile(fullPath, w.content);
-          writeResults.push(err ? `⚠ ${w.path}: ${err}` : `✅ Wrote \`${w.path}\``);
-        }
-        updateChatMessages(chatId, (prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last && last.role === 'assistant') {
-            updated[updated.length - 1] = { ...last, content: last.content + `\n\n---\n📝 **Files written:**\n${writeResults.join('\n')}` };
-          }
-          return updated;
-        });
+        await reviewFileChanges(chatLinkedFolder, chatId, writes);
       }
     }
-  }, [chatMessages, streamResponse, getChatLinkedFolder]);
+  }, [chatMessages, streamResponse, getChatLinkedFolder, reviewFileChanges]);
 
   // Stable wrapper, so the message list is not redrawn on every streamed chunk
   const regenerateRef = useRef(null);
@@ -1876,9 +1894,7 @@ export default function App() {
       const readInfo = [];
 
       for (const r of reads) {
-        const fullPath = chatLinkedFolder.endsWith('/') || chatLinkedFolder.endsWith('\\')
-          ? `${chatLinkedFolder}${r.path}` : `${chatLinkedFolder}/${r.path}`;
-        const result = await readFile(fullPath);
+        const result = await readFile(chatLinkedFolder, r.path);
         if (result.content && boosts.fileReadLimit > 0 && result.content.length > boosts.fileReadLimit) {
           result.content = result.content.slice(0, boosts.fileReadLimit) + '\n...[file truncated by file read limit]';
         }
@@ -1939,26 +1955,12 @@ export default function App() {
         if (chatLinkedFolder && isTauri()) {
           const writes = parseFileWrites(modifiedContent + '\n\n' + followUpContent);
           if (writes.length > 0) {
-            const writeResults = [];
-            for (const w of writes) {
-              const fullPath = chatLinkedFolder.endsWith('/') || chatLinkedFolder.endsWith('\\')
-                ? `${chatLinkedFolder}${w.path}` : `${chatLinkedFolder}/${w.path}`;
-              const err = await writeFile(fullPath, w.content);
-              writeResults.push(err ? `⚠ ${w.path}: ${err}` : `✅ Wrote \`${w.path}\``);
-            }
-            updateChatMessages(activeChatId, (prev) => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last && last.role === 'assistant') {
-                updated[updated.length - 1] = { ...last, content: last.content + `\n\n---\n📝 **Files written:**\n${writeResults.join('\n')}` };
-              }
-              return updated;
-            });
+            await reviewFileChanges(chatLinkedFolder, activeChatId, writes);
           }
         }
       }
     })();
-  }, [chatMessages, activeChatId, streamingChatId, getChatLinkedFolder, updateChatMessages, streamResponse, boosts.fileReadLimit]);
+  }, [chatMessages, activeChatId, streamingChatId, getChatLinkedFolder, updateChatMessages, streamResponse, boosts.fileReadLimit, reviewFileChanges]);
 
   return (
     <div className="bg-[var(--cl-bg)] text-[var(--cl-text)] h-full w-full flex overflow-hidden antialiased">
@@ -2134,6 +2136,13 @@ export default function App() {
         onRetry={handleUpgradeRetry}
         onRefine={handleUpgradeRefine}
         onCancel={handleUpgradeCancel}
+      />
+
+      <FileChangesReview
+        review={pendingFileChanges}
+        onCancel={() => setPendingFileChanges(null)}
+        onAccept={applyReviewedFileChanges}
+        onToggle={toggleReviewedFile}
       />
     </div>
   );
