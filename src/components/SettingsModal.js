@@ -705,6 +705,9 @@ export default function SettingsModal({
                 <BoostRow title="To-do list" desc="Lets Selene make a checklist for bigger tasks and show it in a panel on the right. You can tick items yourself.">
                   <Switch checked={boosts.toolTodos} onChange={(v) => onBoostsChange({ toolTodos: v })} />
                 </BoostRow>
+                <BoostRow title="Tool list" desc="Lets Selene check which tools she has when she is unsure what she can do. You can also type /tools in the chat.">
+                  <Switch checked={boosts.toolListTools !== false} onChange={(v) => onBoostsChange({ toolListTools: v })} />
+                </BoostRow>
               </div>
 
               {/* ── Helper agents ── */}

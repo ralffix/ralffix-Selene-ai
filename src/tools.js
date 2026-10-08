@@ -149,6 +149,14 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'list_tools',
+      description: 'List every tool and ability you have in this chat right now, and which are switched off. Call it when you are unsure what you can do, or when the user asks.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
 ];
 
 // ── Tool execution ──

@@ -109,7 +109,7 @@ export function useLocalModels() {
   }, [update]);
 
   // Make sure `name` is loaded and ready. Returns null when ready, or an error text.
-  const ensureLoaded = useCallback(async (name, signal, onNotice, retried = false) => {
+  const loadModel = useCallback(async (name, signal, onNotice, retried = false) => {
     const model = modelsRef.current.find((m) => m.name === name);
     if (!model) return 'This local model is no longer in your list. Add it again in Settings, Local models.';
     if (!isTauri()) return 'Running local models only works in the desktop app.';
@@ -165,7 +165,7 @@ export function useLocalModels() {
       if (onNotice) onNotice('The GPU version could not start. Switching to the CPU version…');
       const cpuError = await installEngine('cpu', onNotice);
       if (cpuError) return cpuError;
-      return ensureLoaded(name, signal, onNotice, true);
+      return loadModel(name, signal, onNotice, true);
     }
 
     if (!ok) {
@@ -185,6 +185,18 @@ export function useLocalModels() {
     update({ status: 'ready', error: '' });
     return null;
   }, [stop, update]);
+
+  // Parallel callers (helper agents, a second message) share one load instead of killing each other's server
+  const loadingRef = useRef(null);
+  const ensureLoaded = useCallback((name, signal, onNotice) => {
+    const cur = loadingRef.current;
+    if (cur && cur.name === name) return cur.promise;
+    const promise = loadModel(name, signal, onNotice).finally(() => {
+      if (loadingRef.current && loadingRef.current.promise === promise) loadingRef.current = null;
+    });
+    loadingRef.current = { name, promise };
+    return promise;
+  }, [loadModel]);
 
   // Adds a .gguf file to the list
   const addModel = useCallback((path) => {

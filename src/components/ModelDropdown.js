@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { PROVIDER_DISPLAY, PROVIDER_MODELS } from '../types';
+import { useCloudModels } from '../cloudmodels';
 import { ChevronDownIcon } from './icons';
 
 export default function ModelDropdown({
@@ -28,6 +29,13 @@ export default function ModelDropdown({
   }, []);
 
   const activeKey = apiKeys.find((k) => k.id === activeKeyId);
+
+  // Groq and OpenAI lists come from the providers themselves (built-in list if offline)
+  const cloud = useCloudModels(apiKeys);
+  const cloudList = (provider) => {
+    const list = cloud[provider] || PROVIDER_MODELS[provider] || [];
+    return activeKey?.provider === provider && activeModel && !list.includes(activeModel) ? [activeModel, ...list] : list;
+  };
 
   // Group keys by provider
   const groupedByProvider = apiKeys.reduce((acc, key) => {
@@ -77,7 +85,7 @@ export default function ModelDropdown({
                   ? (ollama?.models || []).map((m) => m.name)
                   : provider === 'custom'
                     ? (customModels || []).map((m) => m.name)
-                    : PROVIDER_MODELS[provider];
+                    : cloudList(provider);
                 const isActiveProvider = activeKey?.provider === provider;
 
                 return (

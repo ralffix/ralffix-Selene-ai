@@ -140,6 +140,7 @@ const DEFAULT_BOOSTS = {
   toolRunCommand: true,
   commandApproval: 'ask',  // 'ask' = approve every command | 'safe' = read-only commands in the project folder run on their own | 'always' = never ask
   toolTodos: true,         // Selene may keep a to-do list in the side panel
+  toolListTools: true,     // Selene may check which tools she has (list_tools)
   toolOutputLimit: 6000,   // hard cap on a single tool result, in characters (0 = no limit)
   thinking: 'off',         // 'off' | 'light' | 'normal' | 'deep'
   agentsEnabled: false,    // Selene may start helper agents
@@ -220,9 +221,35 @@ function getEnabledTools(boosts, memory) {
     if (n === 'save_memory' || n === 'forget_memory') return memoryOn;
     if (n === 'delegate_to_agents') return agentsOn;
     if (n === 'update_todos') return boosts.toolTodos;
+    if (n === 'list_tools') return boosts.toolListTools !== false;
     return true;
   });
   return enabled.length > 0 ? enabled : undefined;
+}
+
+// "/tools" (also /commands, /help): asks the AI to list everything it can do, and tells it what is switched on right now.
+const SLASH_TOOLS = /^\/(tools|commands|help)\s*$/i;
+function buildToolsOverview(boosts, memory, folder) {
+  const onNames = new Set((getEnabledTools(boosts, memory) || []).map((t) => t.function.name));
+  const line = (t) => {
+    const f = t.function;
+    const props = (f.parameters && f.parameters.properties) || {};
+    const req = (f.parameters && f.parameters.required) || [];
+    const args = Object.keys(props).map((k) => k + (req.includes(k) ? '' : '?')).join(', ');
+    return `- \`${f.name}(${args})\`: ${f.description.split('. ')[0].replace(/\.$/, '')}`;
+  };
+  const on = TOOL_DEFINITIONS.filter((t) => onNames.has(t.function.name));
+  const off = TOOL_DEFINITIONS.filter((t) => !onNames.has(t.function.name));
+  let out = '**Tool calls available now** (arguments marked ? are optional)\n' + (on.length ? on.map(line).join('\n') : '- none');
+  if (off.length) out += `\n\n**Switched off** (turn them on in Settings): ${off.map((t) => `\`${t.function.name}\``).join(', ')}.`;
+  if (onNames.has('run_command')) {
+    const mode = boosts.commandApproval;
+    out += '\n\nCommand approval: ' + (mode === 'always' ? 'commands run without asking.' : mode === 'safe' ? 'read-only commands in the project folder run alone, everything else needs the user OK.' : 'every command needs the user OK.');
+  }
+  out += folder
+    ? '\n\n**Also available (no tool call needed)**\n- `[read:path]` written in a reply: loads that file from the project folder.\n- A code block labelled with a relative file path: saves the whole file (the user reviews the changes first).'
+    : '\n\n**Files**: no project folder is linked to this chat, so files cannot be read or written until the user links one.';
+  return out;
 }
 
 // Providers say things like "Please try again in 7.38s" or "in 2m3.5s". Returns ms to wait, or null.
@@ -339,15 +366,16 @@ function nextOllamaState(prev, online, models) {
 
 // ── Command approval: which commands may run without asking ("Auto for read-only") ──
 const SAFE_COMMANDS = new Set(['ls', 'cat', 'head', 'tail', 'grep', 'rg', 'wc', 'pwd', 'cd', 'tree', 'file', 'stat', 'du', 'which', 'echo', 'basename', 'dirname', 'realpath', 'find']);
-const SAFE_GIT = new Set(['status', 'log', 'diff', 'show', 'branch', 'ls-files', 'rev-parse', 'remote']);
+const SAFE_GIT = new Set(['status', 'log', 'diff', 'show', 'ls-files', 'rev-parse']);
 const SENSITIVE_PATHS = /(\.ssh|\.gnupg|\.aws|\.kube|\.netrc|\.env\b|id_rsa|id_ed25519|shadow|passwd|credentials|secret|token)/i;
 
 // True only for plain look-but-don't-touch commands that stay inside the project folder
 function isSafeReadCommand(command, folder) {
   const cmd = String(command || '').trim();
   if (!cmd || !folder) return false;
-  if (/[`<>\n\r]|\$\(|\$\{|\.\.|~/.test(cmd)) return false; // no redirects, substitutions, parent folders or home
+  if (/[`<>\n\r]|\$[A-Za-z_0-9{($]|\.\.|~|(^|[^&])&([^&]|$)/.test(cmd)) return false; // no redirects, substitutions, parent folders or home
   if (SENSITIVE_PATHS.test(cmd)) return false;
+  if (/--(pre|pre-glob|output|ext-diff|textconv)\b|\btree\b[^|;&]*\s-o/.test(cmd)) return false; // flags that run programs or write files
 
   // Any absolute path must be inside the project folder
   const base = folder.replace(/\/+$/, '');
@@ -1524,6 +1552,8 @@ export default function App() {
               output = runMemoryTool(name, args);
             } else if (name === 'update_todos') {
               output = runTodoTool(chatId, args);
+            } else if (name === 'list_tools') {
+              output = buildToolsOverview(boosts, memory, getChatLinkedFolder(chatId));
             } else if (name === 'delegate_to_agents') {
               const agentController = new AbortController();
               abortRef.current = agentController;
@@ -1742,6 +1772,11 @@ export default function App() {
 
   const handleSend = useCallback(async () => {
     const trimmed = inputValue.trim();
+    if (SLASH_TOOLS.test(trimmed)) {
+      if (!activeKey || streamingChatId === activeChatId) return;
+      doSend('What is switched on in the app right now:\n\n' + buildToolsOverview(boosts, memory, getChatLinkedFolder(activeChatId)) + '\n\nTell me in your own words ALL the tools and abilities you have in this chat, one line each with a tiny example. Also say which ones you cannot use right now and why.');
+      return;
+    }
     if (!trimmed || !activeKey || streamingChatId === activeChatId || autoUpgrading) return;
     if (promptUpgraderEnabled && !(boosts.upgraderSkipShort && isTooShortToUpgrade(trimmed))) {
       if (boosts.upgraderAuto) {
@@ -1757,7 +1792,7 @@ export default function App() {
       return;
     }
     doSend();
-  }, [inputValue, activeKey, streamingChatId, activeChatId, autoUpgrading, promptUpgraderEnabled, boosts.upgraderSkipShort, boosts.upgraderAuto, runPromptUpgrade, doSend]);
+  }, [inputValue, activeKey, streamingChatId, activeChatId, autoUpgrading, promptUpgraderEnabled, boosts, memory, getChatLinkedFolder, boosts.upgraderSkipShort, boosts.upgraderAuto, runPromptUpgrade, doSend]);
 
   const handleUpgradeUseUpgraded = useCallback((edited) => {
     if (!promptUpgrade) return;
